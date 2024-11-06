@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Интерактивная карта Украины</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <div class="stars"></div>
+    <div class="twinkling"></div>
+    <div class="clouds"></div>
+    <div id="tooltip" class="tooltip"></div>
+    <div id="map-container"></div>
+    <div id="region-info" class="region-info">
+        <button id="close-info"><span class="emoji"><img src="./img/cross-mark_274c.png" alt="Закрыть" width="24px"></span></button>
+        <div id="region-content"></div>
+    </div>
+    <div class="region-info-overlay"></div>
+
+    <script src=""></script>
+    <script>
+
+class UkraineMap {
+    constructor(containerId) {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        this.containerId = containerId;
+        this.tooltip = d3.select("#tooltip");
+        this.svg = d3.select(`#${this.containerId}`).append("svg");
+        this.regionDataCache = {};
+        this.loadMapData();
+    }
+
+    loadMapData() {
+        d3.json("https://raw.githubusercontent.com/EugeneBorshch/ukraine_geojson/refs/heads/master/UA_FULL_Ukraine.geojson")
+            .then(data => {
+                this.mapData = data;
+                this.regionCodes = {};
+                this.mapData.features.forEach(feature => {
+                    this.regionCodes[feature.properties.name] = this.transliterate(feature.properties.name).toLowerCase().replace(/\s+/g, '-');
+                });
+                this.resizeMap();
+            })
+            .catch(error => console.error("Ошибка загрузки карты:", error));
+    }
+
+    transliterate(word) {
+        const transliterations = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g', 'д': 'd', 'е': 'e', 'є': 'ye', 'ж': 'zh', 'з': 'z', 'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ь': '1', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'H', 'Ґ': 'G', 'Д': 'D', 'Е': 'E', 'Є': 'Ye', 'Ж': 'Zh', 'З': 'Z', 'И': 'Y', 'І': 'I', 'Ї': 'Yi', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ь': '2', 'Ю': 'Yu', 'Я': 'Ya'
+        };
+        return word.split('').map(char => transliterations[char] || char).join('');
+    }
+
+    resizeMap() {
+        this.width = window.innerWidth;
+        this.height = window.innerHeight;
+        const projection = d3.geoMercator().fitSize([this.width, this.height], this.mapData);
+        const path = d3.geoPath().projection(projection);
+        this.svg.selectAll("path").remove();
+        this.svg.selectAll("path")
+            .data(this.mapData.features)
+            .enter().append("path")
+            .attr("d", path)
+            .attr("fill", "#1e272e")
+            .attr("stroke", "#f5f6fa")
+            .attr("stroke-width", 0.5)
+            .on("mouseenter", (event, d) => {
+                this.tooltip.style("display", "block").html(`${d.properties.name || "Неизвестно"}`);
+                d3.select(event.target).attr("fill", "#3498db");
+            })
+            .on("mousemove", (event) => this.tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY + 10) + "px"))
+            .on("mouseleave", (event) => {
+                this.tooltip.style("display", "none");
+                d3.select(event.target).attr("fill", "#1e272e");
+            })
+            .on("click", (event, d) => this.showRegionInfo(d.properties.name));
+        this.svg.attr("width", this.width).attr("height", this.height);
+    }
+
+
+    showRegionInfo(regionName) {
+        const regionContent = document.getElementById('region-content');
+        const regionInfo = document.getElementById('region-info');
+        regionInfo.classList.add('show');
+
+        const regionCode = this.regionCodes[regionName];
+        if (!regionCode) {
+            regionContent.innerHTML = `<h2>${regionName}</h2><p>Код региона не найден.</p>`;
+            return;
+        }
+
+        fetch(`/region_info/${encodeURIComponent(regionCode)}.html`)
+            .then(response => response.text())
+            .then(data => {
+                this.regionDataCache[regionName] = data;
+                regionContent.innerHTML = data;
+                this.adjustRegionInfoPosition();
+            })
+            .catch(error => {
+                console.error("Ошибка загрузки данных:", error);
+                regionContent.innerHTML = `<h2>${regionName}</h2><p>Ошибка загрузки информации для ${regionCode}.</p>`;
+                this.adjustRegionInfoPosition();
+            });
+
+        document.getElementById('close-info').addEventListener('click', () => {
+            regionInfo.classList.remove('show');
+            setTimeout(() => { regionContent.innerHTML = ''; }, 500);
+        });
+
+        this.adjustRegionInfoPosition();
+        window.addEventListener('resize', () => this.adjustRegionInfoPosition());
+    }
+
+
+    adjustRegionInfoPosition() {
+        const regionInfo = document.getElementById('region-info');
+        if (regionInfo.classList.contains('show')) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const regionInfoRect = regionInfo.getBoundingClientRect();
+            let right = 0;
+            let top = 0;
+
+
+            if (width <= 768) {
+                top = 0;
+                right = 'auto';
+            } else {
+                right = Math.max(0, width - regionInfoRect.width - 20);
+                top = Math.max(0, (height - regionInfoRect.height) / 2);
+            }
+            regionInfo.style.right = right + 'px';
+            regionInfo.style.top = top + 'px';
+        }
+
+    }
+}
+
+const ukraineMap = new UkraineMap("map-container");
+window.addEventListener('resize', () => ukraineMap.resizeMap());
+
+    </script>
+</body>
+</html>
