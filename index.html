@@ -92,7 +92,7 @@ class UkraineMap {
             return;
         }
 
-        fetch(`space-project-one/region_info/${encodeURIComponent(regionCode)}.html`)
+        fetch(`/region_info/${encodeURIComponent(regionCode)}.html`)
             .then(response => response.text())
             .then(data => {
                 this.regionDataCache[regionName] = data;
